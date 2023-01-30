@@ -1,0 +1,336 @@
+# Refs:
+# https://gist.github.com/Webreaper/81ecda3ecc45fa61a16dfc90cfc4550d
+# https://github.com/qdm12/gluetun/wiki/Mullvad
+
+version: "3"
+services:
+    gluetun:
+        image: qmcgaw/gluetun
+        container_name: gluetun
+        volumes:
+            - /dev/net/tun:/dev/net/tun
+        cap_add:
+            - NET_ADMIN
+        env_file: ./vpn.env
+        ports:
+            # qBit Web UI port
+            - 8090:8090
+            # Bittorrent port
+            - 6881:6881
+            - 6881:6881/udp
+            # Web port
+            - 8080:8080
+            - 9117:9117
+            # Sonarr port
+            - 8989:8989
+            # Radarr port
+            - 7878:7878
+            # Lidarr port
+            - 8686:8686
+            # Prowlarr port
+            - 9696:9696
+            # Bazarr port
+            - 6767:6767
+            # Overseerr port
+            - 5055:5055
+            # Http Proxy port
+            - 6000:6000
+        networks:
+            - vpn
+
+    qbittorrent:
+        image: hotio/qbittorrent:latest
+        container_name: qbittorrent
+        environment:
+            - PUID=1000
+            - PGID=1000
+            - TZ=America/Los_Angeles
+            - UMASK_SET=022
+            - WEBUI_PORTS=8090
+        volumes:
+            - type: volume
+              source: dockerdata_qbt_config
+              target: '/config'
+            - type: volume
+              source: mediarr_Seeding
+              target: '/seeding'
+            - type: volume
+              source: mediarr_Downloads
+              target: '/downloads'
+        network_mode: service:gluetun
+        restart: unless-stopped
+        depends_on:
+            - gluetun
+
+    # qbitmanage:
+    #     image: cr.hotio.dev/hotio/qbitmanage
+    #     container_name: qbitmanage
+    #     environment:
+    #         - PUID=1000
+    #         - PGID=1000
+    #         - UMASK=002
+    #         - TZ=America/Los_Angeles
+    #         - ARGS
+    #     volumes:
+    #         - dockerdata/qbt-manage/config:/config
+    #     network_mode: service:gluetun
+    #     restart: unless-stopped
+    #     depends_on:
+    #         - qbittorrent
+
+    prowlarr:
+        image: hotio/prowlarr:testing
+        container_name: prowlarr
+        environment:
+            - PUID=1000
+            - PGID=1000
+            - TZ=America/Los_Angeles
+        volumes:
+            - type: volume
+              source: dockerdata_prowlarr_config
+              target: '/config'
+        restart: unless-stopped
+        network_mode: service:gluetun
+        depends_on:
+            - gluetun
+            - qbittorrent
+
+    sonarr:
+        image: lscr.io/linuxserver/sonarr:latest
+        container_name: sonarr
+        environment:
+            - PUID=1000
+            - PGID=1000
+            - TZ=America/Los_Angeles
+        volumes:
+            # - /etc/localtime:/etc/localtime:ro
+            - type: volume
+              source: dockerdata_sonarr_config
+              target: '/config'
+            - type: volume
+              source: media_TV
+              target: '/tv'
+            - type: volume
+              source: mediarr_Downloads
+              target: '/downloads'
+        restart: unless-stopped
+        network_mode: service:gluetun
+        depends_on:
+            - prowlarr
+            - qbittorrent
+
+    radarr:
+        image: lscr.io/linuxserver/radarr:latest
+        container_name: radarr
+        environment:
+            - PUID=1000
+            - PGID=1000
+            - TZ=America/Los_Angeles
+        volumes:
+            # - /etc/localtime:/etc/localtime:ro
+            - type: volume
+              source: dockerdata_radarr_config
+              target: '/config'
+            - type: volume
+              source: media_Movies
+              target: '/movies'
+            - type: volume
+              source: mediarr_Downloads
+              target: '/downloads'
+        restart: unless-stopped
+        network_mode: service:gluetun
+        depends_on:
+            - prowlarr
+            - qbittorrent
+
+    lidarr:
+        image: lscr.io/linuxserver/lidarr:latest
+        container_name: lidarr
+        environment:
+            - PUID=1000
+            - PGID=1000
+            - TZ=America/Los_Angeles
+        volumes:
+            # - /etc/localtime:/etc/localtime:ro
+            - type: volume
+              source: dockerdata_lidarr_config
+              target: '/config'
+            - type: volume
+              source: media_Music
+              target: '/music'
+            - type: volume
+              source: mediarr_Downloads
+              target: '/downloads'
+        restart: unless-stopped
+        network_mode: service:gluetun
+        depends_on:
+            - prowlarr
+            - qbittorrent
+
+    overseerr:
+        image: cr.hotio.dev/hotio/overseerr
+        container_name: overseerr
+        environment:
+            - PUID=1000
+            - PGID=1000
+            - UMASK=002
+            - TZ=America/Los_Angeles
+        volumes:
+            # - /etc/localtime:/etc/localtime:ro
+            - type: volume
+              source: dockerdata_overseerr_config
+              target: '/config'
+        restart: unless-stopped
+        network_mode: service:gluetun
+        depends_on:
+            - radarr
+            - sonarr
+
+    bazarr:
+        image: lscr.io/linuxserver/bazarr
+        container_name: bazarr
+        environment:
+            - PUID=1000
+            - PGID=1000
+            - UMASK=002
+            - TZ=America/Los_Angeles
+        volumes:
+            # - /etc/localtime:/etc/localtime:ro
+            - type: volume
+              source: dockerdata_bazarr_config
+              target: '/config'
+            - type: volume
+              source: media_Movies
+              target: '/movies'
+            - type: volume
+              source: media_TV
+              target: '/tv'
+        restart: unless-stopped
+        network_mode: service:gluetun
+        depends_on:
+            - radarr
+            - sonarr
+
+    # plex:
+    #     container_name: plex
+    #     image: lscr.io/linuxserver/plex
+    #     devices:
+    #         - /dev/dri:/dev/dri
+    #     privileged: true
+    #     environment:
+    #         PGID: '101'
+    #         PUID: '1024'
+    #         VERSION: docker
+    #     network_mode: host
+    #     restart: unless-stopped
+    #     volumes:
+    #         - dockerdata/plex:/config:rw
+    #         - media/TV:/tv:rw
+    #         - media/Films:/movies:rw
+    #         - media/Music:/music:rw
+
+    # get_player:
+    #     container_name: get_iplayer
+    #     image: kolonuk/get_iplayer
+    #     environment:
+    #         - PUID=1000
+    #         - PGID=1000
+    #         - TZ=America/Los_Angeles
+    #     ports:
+    #         - 8181:8181/tcp
+    #     restart: unless-stopped
+    #     volumes:
+    #         # - /etc/localtime:/etc/localtime:ro
+    #         - dockerdata/get_iplayer:/root/.get_iplayer:rw
+    #         - mediarr/Downloads/iPlayer:/root/output:rw
+    #
+    # caddy:
+    #     container_name: caddy
+    #     image: caddy:latest
+    #     restart: unless-stopped
+    #     ports:
+    #       - "80:80"
+    #       - "443:443"
+    #       - "443:443/udp"
+    #     volumes:
+    #       - dockerdata/caddy/Caddyfile:/etc/caddy/Caddyfile
+    #       - dockerdata/caddy/data:/data:rw
+    #       - dockerdata/caddy/config:/config:rw
+
+volumes:
+  dockerdata_qbt_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./dockerdata/qbt/config
+  dockerdata_prowlarr_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./dockerdata/prowlarr/config
+  dockerdata_sonarr_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./dockerdata/sonarr/config
+  dockerdata_radarr_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./dockerdata/radarr/config
+  dockerdata_lidarr_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./dockerdata/lidarr/config
+  dockerdata_overseerr_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./dockerdata/overseerr/config
+  dockerdata_bazarr_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./dockerdata/bazarr/config
+  mediarr_Seeding: # media files in-progress
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /Volumes/Shenzhou/docker-services/mediarr/Seeding
+  mediarr_Downloads: # media files in-progress
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /Volumes/Shenzhou/docker-services/mediarr/Downloads
+  media_TV: # media catalog
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /Volumes/Shenzhou/media-share-alias/TV
+  media_Movies: # media catalog
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /Volumes/Shenzhou/media-share-alias/Movies
+  media_Music: # media catalog
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /Volumes/Shenzhou/media-share-alias/Music
+
+networks:
+  vpn:
+    driver: bridge
