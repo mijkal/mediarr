@@ -2,3 +2,5 @@
 
 *.env
 dockerdata
+ovpn
+vpn-confs

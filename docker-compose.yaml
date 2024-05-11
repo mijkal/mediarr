@@ -3,23 +3,43 @@
 # https://github.com/qdm12/gluetun/wiki/Mullvad
 
 version: "3"
+name: mediarr
 services:
     gluetun:
         image: qmcgaw/gluetun
         container_name: gluetun
-        volumes:
-            - /dev/net/tun:/dev/net/tun
+        restart: always
         cap_add:
-            - NET_ADMIN
-        env_file: ./vpn.env
+          - NET_ADMIN
+          - SYS_MODULE
+        devices:
+          - /dev/net/tun:/dev/net/tun
+        volumes:
+            # - /var/run/utun:/var/run/utun
+            - /volume1/docker/mediarr/ovpn:/gluetun
+        env_file: /volume1/docker/mediarr/ovpn.env
+        # env_file: /volume1/docker/mediarr/vpn.env
+        healthcheck:
+            test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+            interval: 5s
+            timeout: 5s
+            start_period: 10s
+            retries: 2
         ports:
             # qBit Web UI port
             - 8090:8090
+            # sabnzbd Web UI port
+            - 8080:8080
+            # Deluge Web UI port
+            - 8112:8112
             # Bittorrent port
             - 6881:6881
             - 6881:6881/udp
+            - 54699:54699
+            - 58846:58846 # Deluge incoming port
+            - 58946:58946 # Deluge incoming port (optional, if needed)
             # Web port
-            - 8080:8080
+            # - 8080:8080
             - 9117:9117
             # Sonarr port
             - 8989:8989
@@ -38,15 +58,64 @@ services:
         networks:
             - vpn
 
+    sabnzbd:
+        image: lscr.io/linuxserver/sabnzbd:latest
+        container_name: sabnzbd
+        environment:
+            - PUID=1030
+            - PGID=100
+            - TZ=America/Los_Angeles
+        volumes:
+            - type: volume
+              source: dockerdata_qbt_config
+              target: '/config'
+            - type: volume
+              source: mediarr_Seeding
+              target: '/incomplete-downloads'
+            - type: volume
+              source: mediarr_Downloads
+              target: '/downloads'
+        network_mode: service:gluetun
+        restart: always
+        depends_on:
+            - gluetun
+
+    # deluge:
+    #     image: lscr.io/linuxserver/deluge:latest
+    #     container_name: deluge
+    #     environment:
+    #         - PUID=1030
+    #         - PGID=100
+    #         - TZ=America/Los_Angeles
+    #     volumes:
+    #         - type: volume
+    #           source: dockerdata_deluge_config
+    #           target: '/config'
+    #         - type: volume
+    #           source: mediarr_Seeding
+    #           target: '/seeding'
+    #         - type: volume
+    #           source: mediarr_Downloads
+    #           target: '/downloads'
+    #     network_mode: service:gluetun
+    #     restart: always
+    #     depends_on:
+    #         - gluetun
+
     qbittorrent:
-        image: hotio/qbittorrent:latest
+        image: ghcr.io/hotio/qbittorrent:latest
         container_name: qbittorrent
         environment:
-            - PUID=1000
-            - PGID=1000
+            - PUID=1030
+            - PGID=100
             - TZ=America/Los_Angeles
             - UMASK_SET=022
             - WEBUI_PORTS=8090
+        # healthcheck:
+        #     test: ["CMD-SHELL", "docker logs -f qbittorrent | grep -q 'QtSingleCoreApplication: listen on local socket failed, QLocalServer::listen: Unknown error 22'"]
+        #     interval: 1m
+        #     timeout: 10s
+        #     retries: 3
         volumes:
             - type: volume
               source: dockerdata_qbt_config
@@ -58,16 +127,16 @@ services:
               source: mediarr_Downloads
               target: '/downloads'
         network_mode: service:gluetun
-        restart: unless-stopped
+        restart: always
         depends_on:
             - gluetun
 
     # qbitmanage:
-    #     image: cr.hotio.dev/hotio/qbitmanage
+    #     image: ghcr.io/hotio/qbitmanage
     #     container_name: qbitmanage
     #     environment:
-    #         - PUID=1000
-    #         - PGID=1000
+    #         - PUID=1030
+    #         - PGID=100
     #         - UMASK=002
     #         - TZ=America/Los_Angeles
     #         - ARGS
@@ -79,17 +148,17 @@ services:
     #         - qbittorrent
 
     prowlarr:
-        image: hotio/prowlarr:testing
+        image: ghcr.io/hotio/prowlarr:testing
         container_name: prowlarr
         environment:
-            - PUID=1000
-            - PGID=1000
+            - PUID=1030
+            - PGID=100
             - TZ=America/Los_Angeles
         volumes:
             - type: volume
               source: dockerdata_prowlarr_config
               target: '/config'
-        restart: unless-stopped
+        restart: always
         network_mode: service:gluetun
         depends_on:
             - gluetun
@@ -99,8 +168,8 @@ services:
         image: lscr.io/linuxserver/sonarr:latest
         container_name: sonarr
         environment:
-            - PUID=1000
-            - PGID=1000
+            - PUID=1030
+            - PGID=100
             - TZ=America/Los_Angeles
         volumes:
             # - /etc/localtime:/etc/localtime:ro
@@ -113,7 +182,7 @@ services:
             - type: volume
               source: mediarr_Downloads
               target: '/downloads'
-        restart: unless-stopped
+        restart: always
         network_mode: service:gluetun
         depends_on:
             - prowlarr
@@ -123,8 +192,8 @@ services:
         image: lscr.io/linuxserver/radarr:latest
         container_name: radarr
         environment:
-            - PUID=1000
-            - PGID=1000
+            - PUID=1030
+            - PGID=100
             - TZ=America/Los_Angeles
         volumes:
             # - /etc/localtime:/etc/localtime:ro
@@ -137,7 +206,7 @@ services:
             - type: volume
               source: mediarr_Downloads
               target: '/downloads'
-        restart: unless-stopped
+        restart: always
         network_mode: service:gluetun
         depends_on:
             - prowlarr
@@ -147,8 +216,8 @@ services:
         image: lscr.io/linuxserver/lidarr:latest
         container_name: lidarr
         environment:
-            - PUID=1000
-            - PGID=1000
+            - PUID=1030
+            - PGID=100
             - TZ=America/Los_Angeles
         volumes:
             # - /etc/localtime:/etc/localtime:ro
@@ -161,18 +230,18 @@ services:
             - type: volume
               source: mediarr_Downloads
               target: '/downloads'
-        restart: unless-stopped
+        restart: always
         network_mode: service:gluetun
         depends_on:
             - prowlarr
             - qbittorrent
 
     overseerr:
-        image: cr.hotio.dev/hotio/overseerr
+        image: ghcr.io/hotio/overseerr
         container_name: overseerr
         environment:
-            - PUID=1000
-            - PGID=1000
+            - PUID=1030
+            - PGID=100
             - UMASK=002
             - TZ=America/Los_Angeles
         volumes:
@@ -180,18 +249,33 @@ services:
             - type: volume
               source: dockerdata_overseerr_config
               target: '/config'
-        restart: unless-stopped
+        restart: always
         network_mode: service:gluetun
         depends_on:
             - radarr
             - sonarr
 
+    tautulli:
+        image: lscr.io/linuxserver/tautulli:latest
+        container_name: tautulli
+        environment:
+          - PUID=1030
+          - PGID=100
+          - TZ=America/Los_Angeles
+        volumes:
+            - type: volume
+              source: dockerdata_tautulli_config
+              target: '/config'
+        ports:
+          - 8181:8181
+        restart: always
+
     bazarr:
-        image: lscr.io/linuxserver/bazarr
+        image: lscr.io/linuxserver/bazarr:latest
         container_name: bazarr
         environment:
-            - PUID=1000
-            - PGID=1000
+            - PUID=1030
+            - PGID=100
             - UMASK=002
             - TZ=America/Los_Angeles
         volumes:
@@ -205,11 +289,74 @@ services:
             - type: volume
               source: media_TV
               target: '/tv'
-        restart: unless-stopped
+        restart: always
         network_mode: service:gluetun
         depends_on:
             - radarr
             - sonarr
+
+    plex-meta-manager:
+        image: lscr.io/linuxserver/plex-meta-manager:latest
+        container_name: plex-meta-manager
+        environment:
+            - PUID=1030
+            - PGID=100
+            - TZ=America/Los_Angeles
+            - PMM_CONFIG=/config/config.yml #optional
+            - PMM_TIME=04:15 #optional
+            - PMM_RUN=False #optional
+            - PMM_TEST=False #optional
+            - PMM_NO_MISSING=False #optional
+        volumes:
+            - type: volume
+              source: dockerdata_pmm_config
+              target: '/config'
+        restart: always
+
+    plex-autoscan:
+        image: ghcr.io/hotio/autoscan:latest
+        container_name: plex-autoscan
+        environment:
+            - PUID=1030
+            - PGID=100
+            - UMASK=002
+            - TZ=America/Los_Angeles
+        env_file: /volume1/docker/mediarr/plex.env
+        volumes:
+            - type: volume
+              source: dockerdata_plex_autoscan_config
+              target: '/config'
+        ports:
+          - 3030:3030
+        restart: always
+
+    # jellyfin:
+    #     image: lscr.io/linuxserver/jellyfin:latest
+    #     container_name: jellyfin
+    #     environment:
+    #       - PUID=1030
+    #       - PGID=100
+    #       - TZ=America/Los_Angeles
+    #       - JELLYFIN_PublishedServerUrl=10.1.1.11
+    #     devices:
+    #       - /dev:/dev # Enable hardware acceleration (for ARM-based hosts, like M1 Mac)
+    #     volumes:
+    #       # - /etc/localtime:/etc/localtime:ro
+    #       - type: volume
+    #         source: jellyfin_config
+    #         target: '/config' # docs say can get quite large
+    #       - type: volume
+    #         source: media_Movies
+    #         target: '/data/movies'
+    #       - type: volume
+    #         source: media_TV
+    #         target: '/data/tvshows'
+    #     ports:
+    #       - 8096:8096 # Http webUI
+    #       #- 8920:8920 # Optional - Https webUI
+    #       - 7359:7359/udp # Optional - Client discovery on the local network
+    #       - 1900:1900/udp # Optional - Service discovery for DLNA and clients
+    #     restart: unless-stopped
 
     # plex:
     #     container_name: plex
@@ -229,107 +376,115 @@ services:
     #         - media/Films:/movies:rw
     #         - media/Music:/music:rw
 
-    # get_player:
-    #     container_name: get_iplayer
-    #     image: kolonuk/get_iplayer
-    #     environment:
-    #         - PUID=1000
-    #         - PGID=1000
-    #         - TZ=America/Los_Angeles
-    #     ports:
-    #         - 8181:8181/tcp
-    #     restart: unless-stopped
-    #     volumes:
-    #         # - /etc/localtime:/etc/localtime:ro
-    #         - dockerdata/get_iplayer:/root/.get_iplayer:rw
-    #         - mediarr/Downloads/iPlayer:/root/output:rw
-    #
-    # caddy:
-    #     container_name: caddy
-    #     image: caddy:latest
-    #     restart: unless-stopped
-    #     ports:
-    #       - "80:80"
-    #       - "443:443"
-    #       - "443:443/udp"
-    #     volumes:
-    #       - dockerdata/caddy/Caddyfile:/etc/caddy/Caddyfile
-    #       - dockerdata/caddy/data:/data:rw
-    #       - dockerdata/caddy/config:/config:rw
-
 volumes:
   dockerdata_qbt_config: # container app data
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: ./dockerdata/qbt/config
+      device: /volume1/docker/mediarr/dockerdata/qbt/config
+  dockerdata_sabnzbd_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /volume1/docker/mediarr/dockerdata/sabnzbd/config
+  dockerdata_deluge_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /volume1/docker/mediarr/dockerdata/deluge/config
   dockerdata_prowlarr_config: # container app data
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: ./dockerdata/prowlarr/config
+      device: /volume1/docker/mediarr/dockerdata/prowlarr/config
   dockerdata_sonarr_config: # container app data
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: ./dockerdata/sonarr/config
+      device: /volume1/docker/mediarr/dockerdata/sonarr/config
   dockerdata_radarr_config: # container app data
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: ./dockerdata/radarr/config
+      device: /volume1/docker/mediarr/dockerdata/radarr/config
   dockerdata_lidarr_config: # container app data
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: ./dockerdata/lidarr/config
+      device: /volume1/docker/mediarr/dockerdata/lidarr/config
   dockerdata_overseerr_config: # container app data
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: ./dockerdata/overseerr/config
+      device: /volume1/docker/mediarr/dockerdata/overseerr/config
   dockerdata_bazarr_config: # container app data
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: ./dockerdata/bazarr/config
+      device: /volume1/docker/mediarr/dockerdata/bazarr/config
+  dockerdata_tautulli_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /volume1/docker/mediarr/dockerdata/tautulli/config
+  dockerdata_pmm_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /volume1/docker/mediarr/dockerdata/plex-meta-manager/config
+  dockerdata_plex_autoscan_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /volume1/docker/mediarr/dockerdata/plex-autoscan/config
+  jellyfin_config: # container app data
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /volume1/Media/docker-services/jellyfin/config
   mediarr_Seeding: # media files in-progress
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /Volumes/Shenzhou/docker-services/mediarr/Seeding
+      device: /volume1/Media/docker-services/mediarr/Seeding
   mediarr_Downloads: # media files in-progress
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /Volumes/Shenzhou/docker-services/mediarr/Downloads
+      device: /volume1/Media/docker-services/mediarr/Downloads
   media_TV: # media catalog
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /Volumes/Shenzhou/media-share-alias/TV
+      device: /volume1/Media/Library/TV
   media_Movies: # media catalog
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /Volumes/Shenzhou/media-share-alias/Movies
+      device: /volume1/Media/Library/Movies
   media_Music: # media catalog
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /Volumes/Shenzhou/media-share-alias/Music
+      device: /volume1/Media/Library/Music
 
 networks:
   vpn:
